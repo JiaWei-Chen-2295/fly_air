@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="Fly Air 3D mobile takeoff cinematic demo" />
+    <title>Fly Air - Takeoff</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' fill='%23020b2a'/%3E%3Cpath d='M8 1.2 10.4 6 14.8 6.5 11.6 9.6 12.4 14 8 11.8 3.6 14l.8-4.4L1.2 6.5 5.6 6Z' fill='%23ff9f48'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <canvas id="scene"></canvas>
+
+      <div class="grade-overlay"></div>
+      <div class="vignette"></div>
+
+      <header class="badge" aria-label="Flight badge">
+        <div class="badge-num">25</div>
+        <svg class="badge-crown" viewBox="0 0 110 100" role="img" aria-label="Crown icon">
+          <path d="M10 86 L10 28 L38 58 L55 10 L72 58 L100 28 L100 86 Z" fill="none" stroke="currentColor" stroke-width="7" stroke-linejoin="round" />
+          <path d="M38 58 L38 86" stroke="currentColor" stroke-width="7" />
+          <path d="M72 58 L72 86" stroke="currentColor" stroke-width="7" />
+        </svg>
+      </header>
+
+      <div class="hint">向上滑动可重复观看起飞轨迹</div>
+    </main>
+
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>

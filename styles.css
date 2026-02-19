@@ -1,0 +1,97 @@
+:root {
+  --ink: #f6f7fb;
+  --orange: #ff5a12;
+  --violet: #5922ff;
+  --deep: #02010a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #000;
+  color: var(--ink);
+  font-family: "Rajdhani", "Segoe UI", sans-serif;
+}
+
+.app {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 50% 68%, rgba(255, 106, 25, 0.25), rgba(1, 1, 8, 0.95) 58%),
+    linear-gradient(180deg, #081655 0%, #2f0d66 44%, #6b0d48 58%, #2b020d 75%, #000 100%);
+}
+
+#scene {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.grade-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 60%, rgba(255, 104, 25, 0.42), rgba(255, 104, 25, 0) 38%),
+    radial-gradient(circle at 50% 36%, rgba(98, 57, 255, 0.5), rgba(98, 57, 255, 0) 44%);
+  mix-blend-mode: screen;
+}
+
+.vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(0, 0, 0, 0) 48%, rgba(0, 0, 0, 0.9) 100%);
+}
+
+.badge {
+  position: absolute;
+  top: max(20px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  text-shadow: 0 0 14px rgba(255, 255, 255, 0.33);
+  user-select: none;
+}
+
+.badge-num {
+  font-size: clamp(40px, 5.2vw, 58px);
+  line-height: 1;
+  letter-spacing: 0.04em;
+  font-weight: 700;
+}
+
+.badge-crown {
+  width: clamp(68px, 9.2vw, 110px);
+  color: #f9f9ff;
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.36));
+}
+
+.hint {
+  position: absolute;
+  left: 50%;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  font-size: clamp(12px, 2.6vw, 14px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.5;
+  user-select: none;
+}
+
+@media (max-aspect-ratio: 9/16) {
+  .hint {
+    bottom: max(28px, env(safe-area-inset-bottom));
+  }
+}

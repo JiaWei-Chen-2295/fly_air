@@ -1,0 +1,10 @@
+node_modules
+dist
+assets
+*.glb
+*.zip
+*.png
+*.jpg
+*.jpeg
+*.usdc
+*.blend
