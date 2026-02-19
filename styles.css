@@ -36,6 +36,20 @@ body {
   display: block;
 }
 
+.loading-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: #060208;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.45s ease-out;
+}
+
+.loading-overlay.fade-out {
+  opacity: 0;
+}
+
 .grade-overlay {
   position: absolute;
   inset: 0;

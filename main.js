@@ -48,6 +48,7 @@ const renderer = new THREE.WebGLRenderer({
   alpha: false,
   powerPreference: "high-performance",
 });
+renderer.setClearColor(0x060208, 1);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -63,6 +64,10 @@ const camera = new THREE.PerspectiveCamera(34, 1, 0.22, 600);
 camera.position.set(0, 1.8, 8.6);
 
 const composer = new EffectComposer(renderer);
+if (renderer.capabilities.isWebGL2 && !isTouchLikeDevice) {
+  composer.renderTarget1.samples = 4;
+  composer.renderTarget2.samples = 4;
+}
 composer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.98, 0.72, 0.14);
 composer.addPass(bloomPass);
@@ -73,15 +78,12 @@ const bokehPass = new BokehPass(scene, camera, {
   aperture: 0.00002,
   maxblur: 0.0014,
 });
+bokehPass.enabled = false;
 composer.addPass(bokehPass);
 const smaaPass = new SMAAPass(window.innerWidth, window.innerHeight);
 composer.addPass(smaaPass);
 const outputPass = new OutputPass();
 composer.addPass(outputPass);
-if (renderer.capabilities.isWebGL2 && !isTouchLikeDevice) {
-  composer.renderTarget1.samples = 4;
-  composer.renderTarget2.samples = 4;
-}
 
 addSkyDome(scene);
 addWorld(scene, renderer, hazeTexture);
@@ -146,6 +148,10 @@ const scratch = {
 
 const clock = new THREE.Clock();
 let restartOffset = 0;
+let warmupFrames = 0;
+const WARMUP_THRESHOLD = 3;
+const loadingOverlay = document.querySelector("#loading-overlay");
+
 window.addEventListener("pointerdown", () => {
   restartOffset = clock.elapsedTime;
 });
@@ -159,6 +165,24 @@ function animate() {
   const elapsed = clock.elapsedTime;
   const cycleDuration = 9.4;
   const t = ((elapsed - restartOffset) % cycleDuration) / cycleDuration;
+
+  // Warmup: first few frames render without post-processing to avoid flash/black blocks
+  warmupFrames++;
+  if (warmupFrames <= WARMUP_THRESHOLD) {
+    // Render a bare scene frame to prime GPU pipelines and fill buffers
+    renderer.render(scene, camera);
+    if (warmupFrames === WARMUP_THRESHOLD) {
+      // After warmup, enable passes that depend on valid depth/color buffers
+      applyQualityTier(true);
+      // Fade out loading overlay
+      if (loadingOverlay) {
+        loadingOverlay.classList.add("fade-out");
+        loadingOverlay.addEventListener("transitionend", () => loadingOverlay.remove(), { once: true });
+      }
+    }
+    requestAnimationFrame(animate);
+    return;
+  }
 
   const rush = smooth(0.02, 0.62, t);
   const liftoff = smooth(0.32, 0.58, t);
@@ -749,7 +773,8 @@ function updateAdaptiveQuality(delta) {
 function applyQualityTier(force = false) {
   if (!force && qualityState.appliedPostTier === qualityState.postTier) return;
   qualityState.appliedPostTier = qualityState.postTier;
-  const bokehAllowed = qualityState.allowBokeh && !flybyStabilityState.bokehSuppressed;
+  const isWarming = warmupFrames < WARMUP_THRESHOLD;
+  const bokehAllowed = qualityState.allowBokeh && !flybyStabilityState.bokehSuppressed && !isWarming;
 
   if (qualityState.postTier === 2) {
     bokehPass.enabled = bokehAllowed;
