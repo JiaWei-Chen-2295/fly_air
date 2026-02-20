@@ -1,5 +1,19 @@
 import * as THREE from "three";
 
+function finalizeCanvasTexture(canvas) {
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  // Stabilize translucent textures to avoid mip-level alpha artifacts (square blocks/flicker).
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.wrapS = THREE.ClampToEdgeWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.premultiplyAlpha = true;
+  tex.needsUpdate = true;
+  return tex;
+}
+
 export function makeSoftGlowTexture() {
   const c = document.createElement("canvas");
   c.width = 128;
@@ -13,9 +27,7 @@ export function makeSoftGlowTexture() {
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 128, 128);
 
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  return finalizeCanvasTexture(c);
 }
 
 export function makeBeamTexture() {
@@ -39,9 +51,7 @@ export function makeBeamTexture() {
   ctx.fillStyle = falloff;
   ctx.fillRect(0, 0, c.width, c.height);
 
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  return finalizeCanvasTexture(c);
 }
 
 export function makeStarTexture() {
@@ -69,9 +79,7 @@ export function makeStarTexture() {
   ctx.lineTo(224, center);
   ctx.stroke();
 
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  return finalizeCanvasTexture(c);
 }
 
 export function makeCloudTexture() {
@@ -88,9 +96,7 @@ export function makeCloudTexture() {
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, 256, 256);
 
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  return finalizeCanvasTexture(c);
 }
 
 export function makeVolumeFogTexture() {
@@ -127,10 +133,7 @@ export function makeVolumeFogTexture() {
   ctx.fillRect(0, 0, c.width, c.height);
   ctx.globalCompositeOperation = "source-over";
 
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.needsUpdate = true;
-  return tex;
+  return finalizeCanvasTexture(c);
 }
 
 export function makeHazeTexture() {
@@ -147,7 +150,5 @@ export function makeHazeTexture() {
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, c.width, c.height);
 
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  return finalizeCanvasTexture(c);
 }

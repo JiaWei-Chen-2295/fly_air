@@ -17,6 +17,7 @@ export function addWorld(scene, renderer, hazeTexture) {
   key.shadow.camera.top = 34;
   key.shadow.camera.bottom = -34;
   scene.add(key);
+  scene.add(key.target);
 
   const rim = new THREE.DirectionalLight(0x6b86ff, 0.86);
   rim.position.set(-9, 25, -12);
@@ -61,6 +62,8 @@ export function addWorld(scene, renderer, hazeTexture) {
   );
   horizonGlow.position.set(0, 1.4, -94);
   scene.add(horizonGlow);
+
+  return { keyLight: key };
 }
 
 export function addSkyDome(scene) {

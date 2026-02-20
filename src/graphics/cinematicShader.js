@@ -95,14 +95,14 @@ export function createCinematicShader() {
         vec3 haloColor = vec3(1.0, 0.72, 0.44) * (0.7 + uFlyby * 0.4) + vec3(0.22, 0.32, 0.66) * 0.22;
         color += haloColor * (haloCore * 0.26 + haloRing * 0.18 + haloAxis * 0.12) * uHaloStrength;
 
-        float vignette = smoothstep(1.08, uVignette, length(centered * 1.38));
-        color *= vignette;
+        float vignette = 1.0 - smoothstep(uVignette, 1.08, length(centered * 1.38));
+        color *= clamp(vignette, 0.0, 1.0);
         color += vec3(0.03, 0.012, -0.015) * uShock;
 
         float noise = hash12(vUv * uResolution + uTime * 60.0);
         color += (noise - 0.5) * uGrain * (0.7 + uShock * 0.5);
 
-        gl_FragColor = vec4(color, 1.0);
+        gl_FragColor = vec4(max(color, vec3(0.0)), 1.0);
       }
     `,
   };

@@ -63,8 +63,9 @@ scene.environment = makeAircraftEnvironment(renderer);
 const camera = new THREE.PerspectiveCamera(34, 1, 0.22, 600);
 camera.position.set(0, 1.8, 8.6);
 
+const DISABLE_COMPOSER_MSAA = true;
 const composer = new EffectComposer(renderer);
-if (renderer.capabilities.isWebGL2 && !isTouchLikeDevice) {
+if (renderer.capabilities.isWebGL2 && !isTouchLikeDevice && !DISABLE_COMPOSER_MSAA) {
   composer.renderTarget1.samples = 4;
   composer.renderTarget2.samples = 4;
 }
@@ -86,7 +87,7 @@ const outputPass = new OutputPass();
 composer.addPass(outputPass);
 
 addSkyDome(scene);
-addWorld(scene, renderer, hazeTexture);
+const { keyLight } = addWorld(scene, renderer, hazeTexture);
 const runwayLights = addRunwayLights(scene, starTexture);
 const cloudParticles = addCloudDeck(scene, cloudTexture);
 const atmosphereVolumes = addAtmosphereVolumes(scene, volumeFogTexture);
@@ -113,6 +114,18 @@ const smoothState = {
   fogDensity: scene.fog.density,
 };
 
+// Some GPU/driver combos intermittently produce black block artifacts with BokehPass during flyby.
+const STABILITY_GUARDS = Object.freeze({
+  disableBokeh: true,
+  disableCinematicPass: true,
+  disableBloom: true,
+  disablePulseSprites: true,
+  hideModelBlendMeshes: true,
+  disableLandingBeams: true,
+});
+cinematicPass.enabled = !STABILITY_GUARDS.disableCinematicPass;
+bloomPass.enabled = !STABILITY_GUARDS.disableBloom;
+
 const qualityState = {
   frameTime: 0,
   frameCount: 0,
@@ -125,7 +138,7 @@ const qualityState = {
   motionBlurScale: 1,
   bloomCeiling: 2.2,
   dynamicQualityEnabled: false,
-  allowBokeh: !initialMobileMode,
+  allowBokeh: !initialMobileMode && !STABILITY_GUARDS.disableBokeh,
   allowAircraftShadow: !initialMobileMode,
 };
 
@@ -237,6 +250,11 @@ function animate() {
   aircraftRig.position.copy(smoothState.aircraftPos);
   aircraftRig.rotation.set(smoothState.aircraftRot.x, smoothState.aircraftRot.y, smoothState.aircraftRot.z);
 
+  if (keyLight.castShadow) {
+    keyLight.position.set(smoothState.aircraftPos.x, smoothState.aircraftPos.y + 10, smoothState.aircraftPos.z - 34);
+    keyLight.target.position.copy(smoothState.aircraftPos);
+  }
+
   const desiredCameraPos = scratch.v0.set(
     THREE.MathUtils.damp(smoothState.cameraPos.x, targetCameraX, 11, delta),
     THREE.MathUtils.damp(smoothState.cameraPos.y, targetCameraY, 11, delta),
@@ -263,9 +281,11 @@ function animate() {
   smoothState.bloomRadius = THREE.MathUtils.damp(smoothState.bloomRadius, targetBloomRadius, 8, delta);
   smoothState.bloomThreshold = THREE.MathUtils.damp(smoothState.bloomThreshold, targetBloomThreshold, 8, delta);
   renderer.toneMappingExposure = smoothState.exposure;
-  bloomPass.strength = Math.min(smoothState.bloomStrength, qualityState.bloomCeiling);
-  bloomPass.radius = smoothState.bloomRadius;
-  bloomPass.threshold = smoothState.bloomThreshold;
+  if (bloomPass.enabled) {
+    bloomPass.strength = Math.min(smoothState.bloomStrength, qualityState.bloomCeiling);
+    bloomPass.radius = smoothState.bloomRadius;
+    bloomPass.threshold = smoothState.bloomThreshold;
+  }
   const targetFogDensity = 0.0092 + flybyWindow * 0.0042 + dampedShock * 0.0018;
   smoothState.fogDensity = THREE.MathUtils.damp(smoothState.fogDensity, targetFogDensity, 5.8, delta);
   scene.fog.density = smoothState.fogDensity;
@@ -289,18 +309,20 @@ function animate() {
   bokehPass.uniforms.aperture.value = smoothState.dofAperture;
   bokehPass.uniforms.maxblur.value = smoothState.dofBlur;
 
-  cinematicPass.uniforms.uTime.value = elapsed;
-  cinematicPass.uniforms.uShock.value = dampedShock;
-  cinematicPass.uniforms.uSpeed.value = smoothState.speed;
-  cinematicPass.uniforms.uFlyby.value = flybyWindow;
-  cinematicPass.uniforms.uFogDensity.value = 0.24 + flybyWindow * 0.42 + dampedShock * 0.1;
-  cinematicPass.uniforms.uFogLift.value = 0.5 + flybyWindow * 0.32;
-  const targetMotionBlur = (0.56 + nearPass * 0.18 + dampedShock * 0.16) * qualityState.motionBlurScale;
-  cinematicPass.uniforms.uMotionBlur.value = THREE.MathUtils.damp(cinematicPass.uniforms.uMotionBlur.value, targetMotionBlur, 7, delta);
-  const halo = computeFlybyHalo(flybyWindow, dampedShock, delta);
-  cinematicPass.uniforms.uHaloUv.value.copy(halo.uv);
-  cinematicPass.uniforms.uHaloSize.value = halo.size;
-  cinematicPass.uniforms.uHaloStrength.value = halo.strength;
+  if (cinematicPass.enabled) {
+    cinematicPass.uniforms.uTime.value = elapsed;
+    cinematicPass.uniforms.uShock.value = dampedShock;
+    cinematicPass.uniforms.uSpeed.value = smoothState.speed;
+    cinematicPass.uniforms.uFlyby.value = flybyWindow;
+    cinematicPass.uniforms.uFogDensity.value = 0.24 + flybyWindow * 0.42 + dampedShock * 0.1;
+    cinematicPass.uniforms.uFogLift.value = 0.5 + flybyWindow * 0.32;
+    const targetMotionBlur = (0.56 + nearPass * 0.18 + dampedShock * 0.16) * qualityState.motionBlurScale;
+    cinematicPass.uniforms.uMotionBlur.value = THREE.MathUtils.damp(cinematicPass.uniforms.uMotionBlur.value, targetMotionBlur, 7, delta);
+    const halo = computeFlybyHalo(flybyWindow, dampedShock, delta);
+    cinematicPass.uniforms.uHaloUv.value.copy(halo.uv);
+    cinematicPass.uniforms.uHaloSize.value = halo.size;
+    cinematicPass.uniforms.uHaloStrength.value = halo.strength;
+  }
 
   for (const sprite of runwayLights) {
     const pulse = 0.72 + Math.sin(elapsed * 8.2 + sprite.userData.phase) * 0.22;
@@ -459,20 +481,59 @@ function applyAircraftLook(root, pbrSet) {
     if (!node.isMesh || !node.material) return;
 
     node.castShadow = qualityState.allowAircraftShadow;
-    node.receiveShadow = qualityState.allowAircraftShadow;
+    node.receiveShadow = false;
 
     const sourceMaterials = Array.isArray(node.material) ? node.material : [node.material];
+    if (STABILITY_GUARDS.hideModelBlendMeshes) {
+      const nodeLabel = `${node.name || ""}`.toLowerCase();
+      const keepTransparentGlass = /glass|window|cockpit|windscreen/.test(nodeLabel);
+      const hasBlendMaterial = sourceMaterials.some((source) =>
+        isLikelyTransparentSource(source, `${nodeLabel} ${(source?.name || "")}`.toLowerCase())
+      );
+      if (hasBlendMaterial && !keepTransparentGlass) {
+        node.visible = false;
+        return;
+      }
+    }
     const rebuilt = sourceMaterials.map((source) => rebuildAircraftMaterial(source, node.name, pbrSet));
     node.material = Array.isArray(node.material) ? rebuilt : rebuilt[0];
   });
 }
 
+function isLikelyTransparentSource(source, label) {
+  const hasSourceAlpha = typeof source?.opacity === "number" && source.opacity < 0.999;
+  const hasAlphaCut = typeof source?.alphaTest === "number" && source.alphaTest > 0;
+  const blendHint = /fan|windscreen|fr24|material\.008|24-default/.test(label);
+  return Boolean(source?.transparent) || hasSourceAlpha || hasAlphaCut || blendHint;
+}
+
 function rebuildAircraftMaterial(source, meshName, pbrSet) {
   const label = `${meshName || ""} ${(source?.name || "")}`.toLowerCase();
+  const isTransparentSource = isLikelyTransparentSource(source, label);
   const isGlass = /glass|window|cockpit/.test(label);
   const isWheel = /wheel|tire|tyre|rubber/.test(label);
   const isEngine = /engine|nacelle|fan|intake|turbine/.test(label);
   const isGear = /gear|strut|leg/.test(label);
+
+  if (isTransparentSource) {
+    // Keep GLTF transparent materials close to source to avoid black-card artifacts on blend meshes.
+    const stable = source?.clone?.() || new THREE.MeshStandardMaterial();
+    stable.transparent = true;
+    stable.opacity = typeof source?.opacity === "number" ? source.opacity : 1;
+    stable.depthWrite = false;
+    stable.depthTest = true;
+    stable.premultipliedAlpha = true;
+    stable.alphaTest = Math.max(typeof source?.alphaTest === "number" ? source.alphaTest : 0, 0.02);
+    stable.side = typeof source?.side === "number" ? source.side : THREE.DoubleSide;
+    if (stable.map) {
+      stable.map.colorSpace = THREE.SRGBColorSpace;
+      stable.map.generateMipmaps = false;
+      stable.map.minFilter = THREE.LinearFilter;
+      stable.map.magFilter = THREE.LinearFilter;
+      stable.map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    }
+    return stable;
+  }
 
   if (isGlass) {
     const glass = new THREE.MeshPhysicalMaterial({
@@ -703,6 +764,11 @@ function updateAircraftEffects(elapsed, timelineT, passShock, delta) {
   const strobePhase = (elapsed * 1.72) % 1;
   const strobePulse = gaussianPulse(strobePhase, 0.03, 0.014) + gaussianPulse(strobePhase, 0.12, 0.018);
   for (const strobe of aircraftEffects.strobe) {
+    if (STABILITY_GUARDS.disablePulseSprites) {
+      strobe.sprite.visible = false;
+      strobe.point.intensity = 0;
+      continue;
+    }
     const power = THREE.MathUtils.clamp(strobePulse * 1.8, 0, 1);
     strobe.sprite.material.opacity = power;
     strobe.sprite.scale.setScalar(strobe.baseScale * (1 + power * 0.75));
@@ -712,6 +778,11 @@ function updateAircraftEffects(elapsed, timelineT, passShock, delta) {
   const beaconPhase = (elapsed * 0.92) % 1;
   const beaconPulse = gaussianPulse(beaconPhase, 0.5, 0.17);
   for (const beacon of aircraftEffects.beacon) {
+    if (STABILITY_GUARDS.disablePulseSprites) {
+      beacon.sprite.visible = false;
+      beacon.point.intensity = 0;
+      continue;
+    }
     beacon.sprite.material.opacity = beaconPulse * 0.86;
     beacon.sprite.scale.setScalar(beacon.baseScale * (1 + beaconPulse * 0.48));
     beacon.point.intensity = 1.5 + beaconPulse * 16;
@@ -721,6 +792,16 @@ function updateAircraftEffects(elapsed, timelineT, passShock, delta) {
   const cameraDistance = camera.position.distanceTo(aircraftRig.position);
   const beamNearFade = THREE.MathUtils.clamp((cameraDistance - 11) / 18, 0, 1);
   for (const landing of aircraftEffects.landing) {
+    if (STABILITY_GUARDS.disableLandingBeams) {
+      landing.spot.intensity = 0;
+      landing.glow.sprite.visible = false;
+      landing.glow.point.intensity = 0;
+      landing.beam.visible = false;
+      landing.beamMaterial.opacity = 0;
+      continue;
+    }
+    landing.glow.sprite.visible = true;
+    landing.beam.visible = true;
     const target = landingStrength * (1 + passShock * 0.45);
     const intensity = landing.baseIntensity * target;
     landing.spot.intensity = THREE.MathUtils.damp(landing.spot.intensity, intensity, 12, delta);
@@ -857,7 +938,7 @@ function makeHeroJet() {
   group.traverse((node) => {
     if (!node.isMesh) return;
     node.castShadow = qualityState.allowAircraftShadow;
-    node.receiveShadow = qualityState.allowAircraftShadow;
+    node.receiveShadow = false;
   });
 
   group.scale.setScalar(0.72);
