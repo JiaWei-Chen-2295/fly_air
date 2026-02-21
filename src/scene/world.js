@@ -1,10 +1,10 @@
 import * as THREE from "three";
 
 export function addWorld(scene, renderer, hazeTexture) {
-  const hemi = new THREE.HemisphereLight(0xaec9ff, 0x0a1628, 0.42);
+  const hemi = new THREE.HemisphereLight(0x7da4ff, 0x07111a, 0.42);
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xffddc3, 1.58);
+  const key = new THREE.DirectionalLight(0xffb77d, 1.6);
   key.position.set(6, 14, -30);
   key.castShadow = renderer.shadowMap.enabled;
   key.shadow.mapSize.set(2048, 2048);
@@ -19,7 +19,7 @@ export function addWorld(scene, renderer, hazeTexture) {
   scene.add(key);
   scene.add(key.target);
 
-  const rim = new THREE.DirectionalLight(0xc6dcff, 0.72);
+  const rim = new THREE.DirectionalLight(0x7dadeb, 0.82);
   rim.position.set(-16, 22, -8);
   scene.add(rim);
 
@@ -31,31 +31,100 @@ export function addWorld(scene, renderer, hazeTexture) {
   runwayGlow.position.set(0, -1.15, -24);
   scene.add(runwayGlow);
 
+  // --- REALISTIC PBR TEXTURES (POLYHAVEN ASPHALT) ---
+  const tLoader = new THREE.TextureLoader();
+  const diffTex = tLoader.load("https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/asphalt_02/asphalt_02_diff_2k.jpg");
+  const norTex = tLoader.load("https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/asphalt_02/asphalt_02_nor_gl_2k.jpg");
+  const roughTex = tLoader.load("https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/asphalt_02/asphalt_02_rough_2k.jpg");
+
+  const setupTex = (tex, repeatX, repeatY) => {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(repeatX, repeatY);
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 4;
+  };
+
+  diffTex.colorSpace = THREE.SRGBColorSpace;
+  setupTex(diffTex, 4, 35);
+  setupTex(norTex, 4, 35);
+  setupTex(roughTex, 4, 35);
+
   const runwayMaterial = new THREE.MeshStandardMaterial({
-    color: 0x0b1220,
-    roughness: 0.92,
-    metalness: 0.08,
+    map: diffTex,
+    normalMap: norTex,
+    roughnessMap: roughTex,
+    roughness: 0.85,
+    metalness: 0.2,
+    color: 0x999999,
     transparent: true,
     opacity: 1,
     depthWrite: false,
   });
+
   const runway = new THREE.Mesh(new THREE.PlaneGeometry(32, 280), runwayMaterial);
   runway.rotation.x = -Math.PI / 2;
   runway.position.set(0, -1.98, -78);
   runway.receiveShadow = true;
   scene.add(runway);
 
+  // --- RUNWAY MARKINGS (Transparent Overlay Layer) ---
+  const markCanvas = document.createElement("canvas");
+  markCanvas.width = 1024;
+  markCanvas.height = 1024;
+  const ctxM = markCanvas.getContext("2d");
+  ctxM.clearRect(0, 0, 1024, 1024);
+
+  ctxM.fillStyle = "rgba(180, 190, 200, 0.75)";
+  for (let j = 0; j < 1024; j += 120) {
+    ctxM.fillRect(504, j + 20, 16, 60);
+  }
+  ctxM.fillStyle = "rgba(140, 150, 160, 0.6)";
+  ctxM.fillRect(40, 0, 16, 1024);
+  ctxM.fillRect(968, 0, 16, 1024);
+
+  ctxM.fillStyle = "rgba(5, 5, 5, 0.65)";
+  for (let i = 0; i < 200; i++) {
+    ctxM.fillRect(300 + Math.random() * 424, Math.random() * 1024, 6 + Math.random() * 12, 60 + Math.random() * 200);
+  }
+
+  const markTex = new THREE.CanvasTexture(markCanvas);
+  markTex.wrapS = markTex.wrapT = THREE.RepeatWrapping;
+  markTex.repeat.set(1, 12);
+  markTex.anisotropy = diffTex.anisotropy;
+
+  const markingsMaterial = new THREE.MeshBasicMaterial({
+    map: markTex,
+    transparent: true,
+    opacity: 0.85,
+    depthWrite: false,
+  });
+  const runwayMarkings = new THREE.Mesh(new THREE.PlaneGeometry(32, 280), markingsMaterial);
+  runwayMarkings.rotation.x = -Math.PI / 2;
+  runwayMarkings.position.set(0, -1.97, -78);
+  scene.add(runwayMarkings);
+
+  // --- TARMAC ---
+  const diffTarmac = diffTex.clone();
+  const norTarmac = norTex.clone();
+  const roughTarmac = roughTex.clone();
+
+  setupTex(diffTarmac, 30, 45);
+  setupTex(norTarmac, 30, 45);
+  setupTex(roughTarmac, 30, 45);
+
   const tarmacMaterial = new THREE.MeshStandardMaterial({
-    color: 0x050b16,
-    roughness: 0.98,
-    metalness: 0.01,
+    map: diffTarmac,
+    normalMap: norTarmac,
+    roughnessMap: roughTarmac,
+    roughness: 0.9,
+    metalness: 0.15,
+    color: 0x888888,
     transparent: true,
     opacity: 1,
     depthWrite: false,
   });
   const tarmac = new THREE.Mesh(new THREE.PlaneGeometry(280, 420), tarmacMaterial);
   tarmac.rotation.x = -Math.PI / 2;
-  tarmac.position.set(0, -2, -112);
+  tarmac.position.set(0, -2.0, -112);
   tarmac.receiveShadow = true;
   scene.add(tarmac);
 
@@ -67,7 +136,7 @@ export function addWorld(scene, renderer, hazeTexture) {
       opacity: 0.34,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-      color: 0xffd8c4,
+      color: 0xff5010,
     })
   );
   horizonGlow.position.set(0, 1.6, -92);
@@ -90,10 +159,10 @@ export function addSkyDome(scene) {
   const material = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     uniforms: {
-      topColor: { value: new THREE.Color(0x0f3567) },
-      midColor: { value: new THREE.Color(0x5c89c0) },
-      horizonColor: { value: new THREE.Color(0xffbb9f) },
-      lowerColor: { value: new THREE.Color(0x040a14) },
+      topColor: { value: new THREE.Color(0x020a16) },
+      midColor: { value: new THREE.Color(0x081f3b) },
+      horizonColor: { value: new THREE.Color(0xff4500) },
+      lowerColor: { value: new THREE.Color(0x010203) },
     },
     vertexShader: `
       varying vec3 vPos;
@@ -110,13 +179,41 @@ export function addSkyDome(scene) {
       uniform vec3 horizonColor;
       uniform vec3 lowerColor;
 
+      float hash(vec3 p) {
+        p = fract(p * 0.3183099 + .1);
+        p *= 17.0;
+        return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+      }
+
+      float noise(vec3 x) {
+        vec3 i = floor(x);
+        vec3 f = fract(x);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(hash(i + vec3(0,0,0)), hash(i + vec3(1,0,0)), f.x),
+                       mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
+                       mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
+      }
+
       void main() {
-        float h = normalize(vPos).y * 0.5 + 0.5;
+        vec3 dir = normalize(vPos);
+        float h = dir.y * 0.5 + 0.5;
         vec3 dusk = mix(midColor, topColor, smoothstep(0.24, 0.92, h));
         vec3 warm = mix(horizonColor, dusk, smoothstep(0.08, 0.64, h));
         vec3 c3 = mix(lowerColor, warm, smoothstep(0.0, 0.94, h));
+        
         float horizonBand = 1.0 - smoothstep(0.0, 0.2, abs(h - 0.28));
-        c3 += horizonColor * horizonBand * 0.12;
+        c3 += horizonColor * horizonBand * 0.22;
+        
+        float n1 = noise(dir * 180.0);
+        float n2 = noise(dir * 380.0);
+        float stars = smoothstep(0.85, 1.0, n1) * smoothstep(0.8, 1.0, n2);
+        
+        float milky = noise(dir * 8.0) * noise(dir * 15.0);
+        
+        c3 += stars * smoothstep(0.3, 0.8, h) * vec3(0.8, 0.9, 1.0) * 1.5;
+        c3 += milky * smoothstep(0.2, 0.7, h) * vec3(0.1, 0.3, 0.6) * 0.45;
+        
         gl_FragColor = vec4(c3, 1.0);
       }
     `,

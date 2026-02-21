@@ -191,6 +191,23 @@ let restartOffset = 0;
 let warmupFrames = 0;
 const WARMUP_THRESHOLD = 3;
 const loadingOverlay = document.querySelector("#loading-overlay");
+const loadingBar = document.querySelector("#loading-bar");
+const loadingText = document.querySelector("#loading-text");
+
+THREE.DefaultLoadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
+  if (loadingBar) {
+    loadingBar.style.width = `${(itemsLoaded / itemsTotal) * 100}%`;
+  }
+  if (loadingText) {
+    loadingText.textContent = `INITIALIZING... ${Math.round((itemsLoaded / itemsTotal) * 100)}%`;
+  }
+};
+
+THREE.DefaultLoadingManager.onLoad = () => {
+  if (loadingText) {
+    loadingText.textContent = "READY FOR TAKEOFF";
+  }
+};
 
 window.addEventListener("pointerdown", () => {
   restartOffset = clock.elapsedTime;
@@ -212,7 +229,7 @@ async function waitForSceneReady() {
 function animate() {
   const delta = Math.min(clock.getDelta(), 0.05);
   const elapsed = clock.elapsedTime;
-  const cycleDuration = 9.4;
+  const cycleDuration = 12.0;
   const t = ((elapsed - restartOffset) % cycleDuration) / cycleDuration;
 
   // Warmup: first few frames render without post-processing to avoid flash/black blocks
@@ -233,43 +250,118 @@ function animate() {
     return;
   }
 
-  const rush = smooth(0.02, 0.62, t);
-  const liftoff = smooth(0.32, 0.58, t);
-  const overfly = smooth(0.5, 0.72, t);
-  const climb = smooth(0.62, 1.0, t);
-  const nearPass = pulseWindow(t, 0.48, 0.66);
-  const passShock = pulseWindow(t, 0.5, 0.61);
-  const flybySafety = smooth(0.42, 0.66, t);
-  const flybyWindow = pulseWindow(t, 0.41, 0.74);
+  // Time segment remapping for the new sequence:
+  // 0.00 - 0.20: Stationary on runway, camera pulls back slowly.
+  // 0.20 - 0.25: Engine run-up vibration peaks before release.
+  // 0.25 - 0.70: Accelerate down runway & take off.
+  // 0.70 - 0.90: Overfly camera & pass shock.
+  // 0.90 - 1.00: Climb into distance.
+
+  const introEnd = 0.25;
+  const tEngineRunup = Math.max(0, (t - 0.15) / 0.1); // peaks right before release
+  const flightT = Math.max(0, (t - introEnd) / (1 - introEnd));
+
+  const rush = smooth(0.02, 0.62, flightT);
+  const liftoff = smooth(0.32, 0.58, flightT);
+  const overfly = smooth(0.5, 0.72, flightT);
+  const climb = smooth(0.62, 1.0, flightT);
+  const nearPass = pulseWindow(flightT, 0.48, 0.66);
+  const passShock = pulseWindow(flightT, 0.5, 0.61);
+  const flybySafety = smooth(0.42, 0.66, flightT);
+  const flybyWindow = pulseWindow(flightT, 0.41, 0.74);
   const dampedShock = passShock * (1 - flybySafety * 0.78);
 
   const y = 0.78 + liftoff * 4.9 + overfly * 6.8 + climb * 9.1;
   const z = -156 + rush * 186 + overfly * 34 + nearPass * 13;
-  const x = Math.sin(elapsed * 0.68) * (0.16 + overfly * 0.34);
 
-  const aircraftTargetRotX = -0.03 + liftoff * 0.14 + overfly * 0.24 + climb * 0.08;
-  const aircraftTargetRotY = Math.sin(elapsed * 0.24) * 0.01;
-  const aircraftTargetRotZ = Math.sin(elapsed * 1.05) * 0.01 * (0.25 + overfly * 0.75);
+  // Speed factor used to blend stationary states with flight states
+  const speedScale = smooth(0.0, 0.15, flightT);
+
+  // Only add aircraft sway when it starts moving
+  const x = Math.sin(elapsed * 0.68) * (0.16 + overfly * 0.34) * speedScale;
+
+  // Tiny engine vibration before moving, transitioning to air turbulence
+  const engineVibe = (1 - speedScale) * tEngineRunup * 0.015;
+  const aircraftTargetRotX = -0.03 + liftoff * 0.14 + overfly * 0.24 + climb * 0.08 + Math.sin(elapsed * 40) * engineVibe;
+  const aircraftTargetRotY = Math.sin(elapsed * 0.24) * 0.01 * speedScale;
+  const aircraftTargetRotZ = Math.sin(elapsed * 1.05) * 0.01 * (0.25 + overfly * 0.75) * speedScale;
   const speedTarget = THREE.MathUtils.clamp(Math.abs((z - smoothState.aircraftPos.z) / Math.max(delta, 0.0001)) / 95, 0, 1.35);
 
-  const shakeAmount = dampedShock * 0.05;
+  const shakeAmount = dampedShock * 0.05 + engineVibe * 0.8;
   const shakeX = Math.sin(elapsed * 58) * shakeAmount;
   const shakeY = Math.cos(elapsed * 63) * shakeAmount * 0.75;
   const shakeZ = Math.sin(elapsed * 54) * shakeAmount * 0.6;
 
+  // --- Interactive Pointer Tracking ---
+  // Ensure we have a global pointer tracker if not already defined
+  if (typeof window.__pointerX === 'undefined') {
+    window.__pointerX = 0;
+    window.__pointerY = 0;
+    // Normalized device coordinates (-1 to 1)
+    const onPointerMove = (e) => {
+      window.__pointerX = (e.clientX / window.innerWidth) * 2 - 1;
+      window.__pointerY = -(e.clientY / window.innerHeight) * 2 + 1;
+    };
+    window.addEventListener('mousemove', onPointerMove, { passive: true });
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches.length > 0) {
+        window.__pointerX = (e.touches[0].clientX / window.innerWidth) * 2 - 1;
+        window.__pointerY = -(e.touches[0].clientY / window.innerHeight) * 2 + 1;
+      }
+    }, { passive: true });
+
+    // Smooth tracked pointer values for the camera
+    window.__smoothPointerX = 0;
+    window.__smoothPointerY = 0;
+  }
+
+  window.__smoothPointerX = THREE.MathUtils.damp(window.__smoothPointerX, window.__pointerX, 5, delta);
+  window.__smoothPointerY = THREE.MathUtils.damp(window.__smoothPointerY, window.__pointerY, 5, delta);
+
+  // Blend out the interactivity as the plane takes off
+  const interactiveFactor = 1.0 - smooth(0.0, 0.4, flightT);
+  const camSwayX = window.__smoothPointerX * 3.8 * interactiveFactor;
+  const camSwayY = window.__smoothPointerY * 2.2 * interactiveFactor;
+  const lookSwayX = window.__smoothPointerX * 0.8 * interactiveFactor;
+  const lookSwayY = window.__smoothPointerY * 0.8 * interactiveFactor;
+
+  // Stationary cinematic camera pullback parameters
+  // Starts extremely close to the engine/wing (macro view) and pulls back
+  const introPullback = smooth(0.0, introEnd, t);
+  const introCamX = 4.2 + flybyWindow * 0.2 + shakeX + camSwayX; // Start offset to the side
+  const introCamY = 0.5 + introPullback * 1.9 + shakeY + camSwayY; // Start very low
+  const introCamZ = -149 + introPullback * 23 + shakeZ; // Start right next to the nose/wing
+
   const flybyDrift = Math.sin(elapsed * 0.42 + 0.9) * flybyWindow * 0.28;
-  const targetCameraX = x * 0.2 + flybyDrift + shakeX;
-  const targetCameraY = 1.7 + liftoff * 0.64 + overfly * 2.35 + nearPass * 0.54 - flybyWindow * 0.1 + shakeY;
-  const targetCameraZ = 8.7 - overfly * 2.9 - nearPass * 0.85 - flybyWindow * 0.32 + shakeZ;
-  const targetLookX = x * 0.2;
-  const targetLookY = 1.64 + liftoff * 2.9 + overfly * 8.6 + nearPass * 0.9;
-  const targetLookZ = -66 + rush * 130 + nearPass * 13;
+
+  // Blend intro camera into flight camera
+  const flightCamX = x * 0.2 + flybyDrift + shakeX;
+  const flightCamY = 1.7 + liftoff * 0.64 + overfly * 2.35 + nearPass * 0.54 - flybyWindow * 0.1 + shakeY;
+  const flightCamZ = 8.7 - overfly * 2.9 - nearPass * 0.85 - flybyWindow * 0.32 + shakeZ;
+
+  const targetCameraX = THREE.MathUtils.lerp(introCamX, flightCamX, speedScale);
+  const targetCameraY = THREE.MathUtils.lerp(introCamY, flightCamY, speedScale);
+  const targetCameraZ = THREE.MathUtils.lerp(introCamZ, flightCamZ, speedScale);
+
+  // Look Target Setup
+  const flightLookX = x * 0.2;
+  const flightLookY = 1.64 + liftoff * 2.9 + overfly * 8.6 + nearPass * 0.9;
+  const flightLookZ = -66 + rush * 130 + nearPass * 13;
+
+  const introLookZ = -153; // Look slightly back at the fuselage
+  const introLookX = 0; // Focus on center
+
+  const targetLookX = THREE.MathUtils.lerp(introLookX + lookSwayX, flightLookX, speedScale);
+  const targetLookY = THREE.MathUtils.lerp(1.74 + lookSwayY, flightLookY, speedScale);
+  const targetLookZ = THREE.MathUtils.lerp(introLookZ, flightLookZ, speedScale);
+
   const upLookFactor = THREE.MathUtils.clamp((targetLookY - targetCameraY - 0.35) / 4.2, 0, 1);
-  const timelineGround = 1 - smooth(0.34, 0.62, t);
+  const timelineGround = 1 - smooth(0.34, 0.62, flightT);
   const groundTargetVisibility = THREE.MathUtils.clamp(timelineGround * (1 - upLookFactor * 0.9), 0, 1);
 
   const mobileBaseFov = isTouchLikeDevice ? (camera.aspect < 0.72 ? 48 : 42) : camera.aspect < 0.78 ? 43 : 37;
-  const targetFov = mobileBaseFov + nearPass * 2.8 + dampedShock * 6.3;
+  const introFov = mobileBaseFov + 8; // Wide angle lens close-up
+  const targetFov = THREE.MathUtils.lerp(introFov, mobileBaseFov + nearPass * 2.8 + dampedShock * 6.3, Math.min(1, introPullback * 2.5));
 
   const targetExposure = THREE.MathUtils.clamp(1.1 + nearPass * 0.06 + dampedShock * 0.14, 1.04, 1.28);
   const targetBloomStrength = 0.66 + nearPass * 0.08 + dampedShock * 0.22;
@@ -333,11 +425,16 @@ function animate() {
   if (ground) {
     const runwayOpacity = THREE.MathUtils.clamp(smoothState.groundVisibility, 0, 1);
     const tarmacOpacity = THREE.MathUtils.clamp(smoothState.groundVisibility * 0.85, 0, 1);
-    ground.runwayMaterial.opacity = runwayOpacity;
-    ground.tarmacMaterial.opacity = tarmacOpacity;
-    ground.runway.visible = runwayOpacity > 0.015;
-    ground.tarmac.visible = tarmacOpacity > 0.015;
-    ground.runwayGlow.intensity = 52 * (0.35 + runwayOpacity * 0.65);
+
+    if (ground.runwayMaterial) ground.runwayMaterial.opacity = runwayOpacity;
+    if (ground.markingsMaterial) ground.markingsMaterial.opacity = runwayOpacity * 0.85;
+    if (ground.tarmacMaterial) ground.tarmacMaterial.opacity = tarmacOpacity;
+
+    if (ground.runway) ground.runway.visible = runwayOpacity > 0.015;
+    if (ground.runwayMarkings) ground.runwayMarkings.visible = runwayOpacity > 0.015;
+    if (ground.tarmac) ground.tarmac.visible = tarmacOpacity > 0.015;
+
+    if (ground.runwayGlow) ground.runwayGlow.intensity = 52 * (0.35 + runwayOpacity * 0.65);
   }
 
   const passDistance = camera.position.distanceTo(aircraftRig.position);
@@ -502,7 +599,7 @@ function loadAircraft(rig) {
         }
 
         if (typeof renderer.compileAsync === "function") {
-          await renderer.compileAsync(scene, camera).catch(() => {});
+          await renderer.compileAsync(scene, camera).catch(() => { });
         }
         resolve();
       },
@@ -512,7 +609,7 @@ function loadAircraft(rig) {
         rig.add(fallback);
         aircraftEffects = attachAircraftEffects(fallback);
         if (typeof renderer.compileAsync === "function") {
-          await renderer.compileAsync(scene, camera).catch(() => {});
+          await renderer.compileAsync(scene, camera).catch(() => { });
         }
         resolve();
       }
