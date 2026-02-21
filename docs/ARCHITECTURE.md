@@ -16,7 +16,7 @@
 
 - 开发：热更新 + ES 模块
 - 生产：压缩打包到 `dist/`
-- 静态资源：`assets/` 作为 `publicDir` 原样拷贝
+- 静态资源：通过 `src/config/assets.js` 显式 `import`，仅打包运行时实际引用文件
 
 ## 2. 渲染管线
 
@@ -55,10 +55,10 @@
 
 ## 6. 资源管理
 
-模型与贴图位于：
+模型与贴图源文件位于：
 
-- `/models/*.glb`
-- `/textures/painted_metal_002/*`
+- `assets/models/*.glb`
+- `assets/textures/painted_metal_002/*`
 
 在运行时：
 

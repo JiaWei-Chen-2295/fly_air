@@ -52,7 +52,7 @@ fly_air/
     utils/
       device.js             # 设备/视口判断
       motion.js             # 动画曲线工具
-  assets/                  # 作为 Vite publicDir，原样拷贝到构建产物根目录
+  assets/                  # 源静态资源（仅被代码 import 的文件会进入构建产物）
     models/
     textures/
   .github/workflows/ci.yml # CI: lint + build
@@ -78,8 +78,8 @@ fly_air/
 
 ## 说明
 
-- 静态资源路径已工程化为绝对路径（如 `/models/A380.glb`）
-- `assets/` 通过 `vite.config.js` 的 `publicDir` 直接映射，不需要额外搬运脚本
+- 静态资源通过 `src/config/assets.js` 模块化导入（Vite 会输出带 hash 的资源 URL）
+- 仅运行时真实引用的资源会进入 `dist/`，避免无关素材增大包体积
 - `main.js` 仍作为入口编排文件，核心工具能力已拆分到 `src/` 模块
 - `ddg_aircraft.html` 是历史参考文件，不参与构建流程
 
