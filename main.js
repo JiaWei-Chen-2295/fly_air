@@ -99,7 +99,7 @@ const atmosphereVolumes = addAtmosphereVolumes(scene, volumeFogTexture);
 let aircraftEffects = null;
 const aircraftRig = new THREE.Group();
 scene.add(aircraftRig);
-loadAircraft(aircraftRig);
+const aircraftReadyPromise = loadAircraft(aircraftRig);
 
 const smoothState = {
   aircraftPos: new THREE.Vector3(0, 0.8, -150),
@@ -198,7 +198,16 @@ window.addEventListener("pointerdown", () => {
 
 window.addEventListener("resize", updateViewport);
 updateViewport();
-requestAnimationFrame(animate);
+waitForSceneReady();
+
+async function waitForSceneReady() {
+  await aircraftReadyPromise;
+  // Reset timeline after resources are ready, so playback starts from frame zero.
+  clock.start();
+  restartOffset = 0;
+  warmupFrames = 0;
+  requestAnimationFrame(animate);
+}
 
 function animate() {
   const delta = Math.min(clock.getDelta(), 0.05);
@@ -475,29 +484,40 @@ function computeFlybyHalo(flybyWindow, shock, delta) {
 function loadAircraft(rig) {
   const loader = new GLTFLoader();
 
-  loader.load(
-    ASSETS.aircraftModel,
-    async (gltf) => {
-      const craft = gltf.scene;
-      const pbrSet = await aircraftPbrPromise.catch(() => null);
-      normalizeLoadedAircraft(craft, 18);
-      applyAircraftLook(craft, pbrSet);
-      rig.add(craft);
-      aircraftEffects = attachAircraftEffects(craft);
-      if (typeof renderer.compileAsync === "function") {
-        renderer.compileAsync(scene, camera).catch(() => {});
+  return new Promise((resolve) => {
+    loader.load(
+      ASSETS.aircraftModel,
+      async (gltf) => {
+        try {
+          const craft = gltf.scene;
+          const pbrSet = await aircraftPbrPromise.catch(() => null);
+          normalizeLoadedAircraft(craft, 18);
+          applyAircraftLook(craft, pbrSet);
+          rig.add(craft);
+          aircraftEffects = attachAircraftEffects(craft);
+        } catch {
+          const fallback = makeHeroJet();
+          rig.add(fallback);
+          aircraftEffects = attachAircraftEffects(fallback);
+        }
+
+        if (typeof renderer.compileAsync === "function") {
+          await renderer.compileAsync(scene, camera).catch(() => {});
+        }
+        resolve();
+      },
+      undefined,
+      async () => {
+        const fallback = makeHeroJet();
+        rig.add(fallback);
+        aircraftEffects = attachAircraftEffects(fallback);
+        if (typeof renderer.compileAsync === "function") {
+          await renderer.compileAsync(scene, camera).catch(() => {});
+        }
+        resolve();
       }
-    },
-    undefined,
-    () => {
-      const fallback = makeHeroJet();
-      rig.add(fallback);
-      aircraftEffects = attachAircraftEffects(fallback);
-      if (typeof renderer.compileAsync === "function") {
-        renderer.compileAsync(scene, camera).catch(() => {});
-      }
-    }
-  );
+    );
+  });
 }
 
 function normalizeLoadedAircraft(model, targetWingSpan) {
