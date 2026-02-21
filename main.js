@@ -33,6 +33,10 @@ const initialMobileMode = isMobileViewport();
 const isTouchLikeDevice =
   initialMobileMode ||
   /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent || "");
+const devicePixelRatio = window.devicePixelRatio || 1;
+const mobilePixelRatioCap = 1.55;
+const desktopPixelRatioCap = 2;
+const pixelRatioCap = isTouchLikeDevice ? mobilePixelRatioCap : desktopPixelRatioCap;
 const textureLoader = new THREE.TextureLoader();
 const navGlowTexture = makeSoftGlowTexture();
 const landingBeamTexture = makeBeamTexture();
@@ -48,16 +52,16 @@ const renderer = new THREE.WebGLRenderer({
   alpha: false,
   powerPreference: "high-performance",
 });
-renderer.setClearColor(0x060208, 1);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+renderer.setClearColor(0x040916, 1);
+renderer.setPixelRatio(Math.min(devicePixelRatio, pixelRatioCap));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.18;
+renderer.toneMappingExposure = 1.12;
 renderer.shadowMap.enabled = !initialMobileMode;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x060208, 0.012);
+scene.fog = new THREE.FogExp2(0x070f1d, 0.0106);
 scene.environment = makeAircraftEnvironment(renderer);
 
 const camera = new THREE.PerspectiveCamera(34, 1, 0.22, 600);
@@ -70,7 +74,7 @@ if (renderer.capabilities.isWebGL2 && !isTouchLikeDevice && !DISABLE_COMPOSER_MS
   composer.renderTarget2.samples = 4;
 }
 composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.98, 0.72, 0.14);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.86, 0.68, 0.16);
 composer.addPass(bloomPass);
 const cinematicPass = new ShaderPass(createCinematicShader());
 composer.addPass(cinematicPass);
@@ -87,7 +91,7 @@ const outputPass = new OutputPass();
 composer.addPass(outputPass);
 
 addSkyDome(scene);
-const { keyLight } = addWorld(scene, renderer, hazeTexture);
+const { keyLight, ground } = addWorld(scene, renderer, hazeTexture);
 const runwayLights = addRunwayLights(scene, starTexture);
 const cloudParticles = addCloudDeck(scene, cloudTexture);
 const atmosphereVolumes = addAtmosphereVolumes(scene, volumeFogTexture);
@@ -112,31 +116,54 @@ const smoothState = {
   dofBlur: 0.0014,
   speed: 0,
   fogDensity: scene.fog.density,
+  groundVisibility: 1,
 };
 
-// Some GPU/driver combos intermittently produce black block artifacts with BokehPass during flyby.
-const STABILITY_GUARDS = Object.freeze({
-  disableBokeh: true,
-  disableCinematicPass: true,
-  disableBloom: true,
-  disablePulseSprites: true,
-  hideModelBlendMeshes: true,
-  disableLandingBeams: true,
-});
+// Gradual restore plan:
+// 0: fully stable mode
+// 1: + landing beams
+// 2: + blend meshes
+// 3: + pulse sprites
+// 4: + cinematic pass
+// 5: + bokeh
+// Bloom is isolated behind a separate flag because it can still trigger black blocks on some GPUs.
+const EFFECT_RESTORE_STAGE = 1;
+const ENABLE_EXPERIMENTAL_BLOOM = false;
+
+function makeStabilityGuards(stage) {
+  const guards = {
+    disableBokeh: true,
+    disableCinematicPass: true,
+    disableBloom: true,
+    disablePulseSprites: true,
+    hideModelBlendMeshes: true,
+    disableLandingBeams: true,
+  };
+
+  if (ENABLE_EXPERIMENTAL_BLOOM) guards.disableBloom = false;
+  if (stage >= 1) guards.disableLandingBeams = false;
+  if (stage >= 2) guards.hideModelBlendMeshes = false;
+  if (stage >= 3) guards.disablePulseSprites = false;
+  if (stage >= 4) guards.disableCinematicPass = false;
+  if (stage >= 5) guards.disableBokeh = false;
+  return guards;
+}
+
+const STABILITY_GUARDS = Object.freeze(makeStabilityGuards(EFFECT_RESTORE_STAGE));
 cinematicPass.enabled = !STABILITY_GUARDS.disableCinematicPass;
 bloomPass.enabled = !STABILITY_GUARDS.disableBloom;
 
 const qualityState = {
   frameTime: 0,
   frameCount: 0,
-  targetPixelRatio: Math.min(window.devicePixelRatio || 1, isTouchLikeDevice ? 1.3 : 1.8),
-  minPixelRatio: 0.78,
-  maxPixelRatio: Math.min(window.devicePixelRatio || 1, isTouchLikeDevice ? 1.3 : 1.8),
+  targetPixelRatio: Math.min(devicePixelRatio, isTouchLikeDevice ? 1.45 : 1.85),
+  minPixelRatio: isTouchLikeDevice ? 0.92 : 0.82,
+  maxPixelRatio: Math.min(devicePixelRatio, isTouchLikeDevice ? mobilePixelRatioCap : desktopPixelRatioCap),
   postTier: initialMobileMode ? 1 : 2,
   appliedPostTier: -1,
   dofScale: initialMobileMode ? 0 : 1,
   motionBlurScale: 1,
-  bloomCeiling: 2.2,
+  bloomCeiling: 2.05,
   dynamicQualityEnabled: false,
   allowBokeh: !initialMobileMode && !STABILITY_GUARDS.disableBokeh,
   allowAircraftShadow: !initialMobileMode,
@@ -228,14 +255,17 @@ function animate() {
   const targetLookX = x * 0.2;
   const targetLookY = 1.64 + liftoff * 2.9 + overfly * 8.6 + nearPass * 0.9;
   const targetLookZ = -66 + rush * 130 + nearPass * 13;
+  const upLookFactor = THREE.MathUtils.clamp((targetLookY - targetCameraY - 0.35) / 4.2, 0, 1);
+  const timelineGround = 1 - smooth(0.34, 0.62, t);
+  const groundTargetVisibility = THREE.MathUtils.clamp(timelineGround * (1 - upLookFactor * 0.9), 0, 1);
 
-  const mobileBaseFov = camera.aspect < 0.78 ? 44 : 38;
-  const targetFov = mobileBaseFov + nearPass * 3.2 + dampedShock * 7.2;
+  const mobileBaseFov = isTouchLikeDevice ? (camera.aspect < 0.72 ? 48 : 42) : camera.aspect < 0.78 ? 43 : 37;
+  const targetFov = mobileBaseFov + nearPass * 2.8 + dampedShock * 6.3;
 
-  const targetExposure = THREE.MathUtils.clamp(1.16 + nearPass * 0.07 + dampedShock * 0.18, 1.08, 1.38);
-  const targetBloomStrength = 0.72 + nearPass * 0.1 + dampedShock * 0.3;
-  const targetBloomRadius = 0.58 + nearPass * 0.08 + dampedShock * 0.12;
-  const targetBloomThreshold = 0.2 - nearPass * 0.018 - dampedShock * 0.03;
+  const targetExposure = THREE.MathUtils.clamp(1.1 + nearPass * 0.06 + dampedShock * 0.14, 1.04, 1.28);
+  const targetBloomStrength = 0.66 + nearPass * 0.08 + dampedShock * 0.22;
+  const targetBloomRadius = 0.54 + nearPass * 0.07 + dampedShock * 0.1;
+  const targetBloomThreshold = 0.22 - nearPass * 0.016 - dampedShock * 0.024;
 
   smoothState.aircraftPos.set(
     THREE.MathUtils.damp(smoothState.aircraftPos.x, x, 10, delta),
@@ -286,9 +316,20 @@ function animate() {
     bloomPass.radius = smoothState.bloomRadius;
     bloomPass.threshold = smoothState.bloomThreshold;
   }
-  const targetFogDensity = 0.0092 + flybyWindow * 0.0042 + dampedShock * 0.0018;
+  const targetFogDensity = 0.0084 + flybyWindow * 0.0036 + dampedShock * 0.0014;
   smoothState.fogDensity = THREE.MathUtils.damp(smoothState.fogDensity, targetFogDensity, 5.8, delta);
   scene.fog.density = smoothState.fogDensity;
+
+  smoothState.groundVisibility = THREE.MathUtils.damp(smoothState.groundVisibility, groundTargetVisibility, 7, delta);
+  if (ground) {
+    const runwayOpacity = THREE.MathUtils.clamp(smoothState.groundVisibility, 0, 1);
+    const tarmacOpacity = THREE.MathUtils.clamp(smoothState.groundVisibility * 0.85, 0, 1);
+    ground.runwayMaterial.opacity = runwayOpacity;
+    ground.tarmacMaterial.opacity = tarmacOpacity;
+    ground.runway.visible = runwayOpacity > 0.015;
+    ground.tarmac.visible = tarmacOpacity > 0.015;
+    ground.runwayGlow.intensity = 52 * (0.35 + runwayOpacity * 0.65);
+  }
 
   const passDistance = camera.position.distanceTo(aircraftRig.position);
   const targetDofFocus = THREE.MathUtils.clamp(passDistance * (0.62 + nearPass * 0.05), 8, 70);
@@ -329,11 +370,11 @@ function animate() {
     const deep = 1 - sprite.userData.depth;
     const size = sprite.userData.baseScale * (1 + pulse * deep * 0.2);
     sprite.scale.set(size, size, 1);
-    sprite.material.opacity = 0.4 + pulse * 0.34;
+    sprite.material.opacity = 0.52 + pulse * 0.26;
   }
 
   for (const cloud of cloudParticles) {
-    cloud.material.opacity = 0.11 + Math.sin(elapsed * 0.25 + cloud.userData.phase) * 0.03;
+    cloud.material.opacity = 0.1 + Math.sin(elapsed * 0.25 + cloud.userData.phase) * 0.024;
     cloud.position.x += cloud.userData.drift * delta * 60;
     if (Math.abs(cloud.position.x) > 65) {
       cloud.position.x *= -1;
@@ -862,7 +903,7 @@ function applyQualityTier(force = false) {
     smaaPass.enabled = true;
     qualityState.dofScale = bokehAllowed ? 1 : 0;
     qualityState.motionBlurScale = 1;
-    qualityState.bloomCeiling = 2.4;
+    qualityState.bloomCeiling = 2.1;
     cinematicPass.uniforms.uGrain.value = 0.006;
     return;
   }
@@ -872,7 +913,7 @@ function applyQualityTier(force = false) {
     smaaPass.enabled = true;
     qualityState.dofScale = bokehAllowed ? 0.78 : 0;
     qualityState.motionBlurScale = 0.84;
-    qualityState.bloomCeiling = 1.95;
+    qualityState.bloomCeiling = 1.82;
     cinematicPass.uniforms.uGrain.value = 0.0045;
     return;
   }
@@ -881,7 +922,7 @@ function applyQualityTier(force = false) {
   smaaPass.enabled = false;
   qualityState.dofScale = 0;
   qualityState.motionBlurScale = 0.62;
-  qualityState.bloomCeiling = 1.7;
+  qualityState.bloomCeiling = 1.62;
   cinematicPass.uniforms.uGrain.value = 0.0035;
 }
 
@@ -948,13 +989,13 @@ function makeHeroJet() {
 function updateViewport() {
   const width = window.innerWidth;
   const height = window.innerHeight;
-  qualityState.maxPixelRatio = Math.min(window.devicePixelRatio || 1, isTouchLikeDevice ? 1.3 : 1.8);
+  qualityState.maxPixelRatio = Math.min(window.devicePixelRatio || 1, isTouchLikeDevice ? mobilePixelRatioCap : desktopPixelRatioCap);
   qualityState.targetPixelRatio = THREE.MathUtils.clamp(qualityState.targetPixelRatio, qualityState.minPixelRatio, qualityState.maxPixelRatio);
   applyQualityTier(true);
   resizeRenderer(width, height);
 
   camera.aspect = width / height;
-  camera.fov = camera.aspect < 0.78 ? 44 : 38;
+  camera.fov = isTouchLikeDevice ? (camera.aspect < 0.72 ? 48 : 42) : camera.aspect < 0.78 ? 43 : 37;
   smoothState.fov = camera.fov;
   camera.updateProjectionMatrix();
   bokehPass.uniforms.aspect.value = camera.aspect;

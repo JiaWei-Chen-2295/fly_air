@@ -1,15 +1,15 @@
 import * as THREE from "three";
 
 export function addWorld(scene, renderer, hazeTexture) {
-  const hemi = new THREE.HemisphereLight(0x3248aa, 0x140607, 0.26);
+  const hemi = new THREE.HemisphereLight(0xaec9ff, 0x0a1628, 0.42);
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xff8146, 1.92);
-  key.position.set(0, 10, -34);
+  const key = new THREE.DirectionalLight(0xffddc3, 1.58);
+  key.position.set(6, 14, -30);
   key.castShadow = renderer.shadowMap.enabled;
   key.shadow.mapSize.set(2048, 2048);
   key.shadow.bias = -0.00008;
-  key.shadow.normalBias = 0.018;
+  key.shadow.normalBias = 0.014;
   key.shadow.camera.near = 2;
   key.shadow.camera.far = 140;
   key.shadow.camera.left = -34;
@@ -19,31 +19,41 @@ export function addWorld(scene, renderer, hazeTexture) {
   scene.add(key);
   scene.add(key.target);
 
-  const rim = new THREE.DirectionalLight(0x6b86ff, 0.86);
-  rim.position.set(-9, 25, -12);
+  const rim = new THREE.DirectionalLight(0xc6dcff, 0.72);
+  rim.position.set(-16, 22, -8);
   scene.add(rim);
 
-  const fill = new THREE.DirectionalLight(0x96a8ff, 0.32);
-  fill.position.set(0, 7, 24);
+  const fill = new THREE.DirectionalLight(0x9fc3ff, 0.46);
+  fill.position.set(4, 10, 18);
   scene.add(fill);
 
-  const runwayGlow = new THREE.PointLight(0xff6b2a, 78, 132, 2);
+  const runwayGlow = new THREE.PointLight(0xffd2b4, 52, 160, 2);
   runwayGlow.position.set(0, -1.15, -24);
   scene.add(runwayGlow);
 
-  const runway = new THREE.Mesh(
-    new THREE.PlaneGeometry(32, 280),
-    new THREE.MeshStandardMaterial({ color: 0x0a0708, roughness: 0.98, metalness: 0.04 })
-  );
+  const runwayMaterial = new THREE.MeshStandardMaterial({
+    color: 0x0b1220,
+    roughness: 0.92,
+    metalness: 0.08,
+    transparent: true,
+    opacity: 1,
+    depthWrite: false,
+  });
+  const runway = new THREE.Mesh(new THREE.PlaneGeometry(32, 280), runwayMaterial);
   runway.rotation.x = -Math.PI / 2;
   runway.position.set(0, -1.98, -78);
   runway.receiveShadow = true;
   scene.add(runway);
 
-  const tarmac = new THREE.Mesh(
-    new THREE.PlaneGeometry(280, 420),
-    new THREE.MeshStandardMaterial({ color: 0x020205, roughness: 1, metalness: 0 })
-  );
+  const tarmacMaterial = new THREE.MeshStandardMaterial({
+    color: 0x050b16,
+    roughness: 0.98,
+    metalness: 0.01,
+    transparent: true,
+    opacity: 1,
+    depthWrite: false,
+  });
+  const tarmac = new THREE.Mesh(new THREE.PlaneGeometry(280, 420), tarmacMaterial);
   tarmac.rotation.x = -Math.PI / 2;
   tarmac.position.set(0, -2, -112);
   tarmac.receiveShadow = true;
@@ -54,16 +64,25 @@ export function addWorld(scene, renderer, hazeTexture) {
     new THREE.MeshBasicMaterial({
       map: hazeTexture,
       transparent: true,
-      opacity: 0.42,
+      opacity: 0.34,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-      color: 0xff6c25,
+      color: 0xffd8c4,
     })
   );
-  horizonGlow.position.set(0, 1.4, -94);
+  horizonGlow.position.set(0, 1.6, -92);
   scene.add(horizonGlow);
 
-  return { keyLight: key };
+  return {
+    keyLight: key,
+    ground: {
+      runway,
+      tarmac,
+      runwayMaterial,
+      tarmacMaterial,
+      runwayGlow,
+    },
+  };
 }
 
 export function addSkyDome(scene) {
@@ -71,10 +90,10 @@ export function addSkyDome(scene) {
   const material = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     uniforms: {
-      topColor: { value: new THREE.Color(0x060f2f) },
-      midColor: { value: new THREE.Color(0x22115f) },
-      horizonColor: { value: new THREE.Color(0xff5b22) },
-      lowerColor: { value: new THREE.Color(0x060107) },
+      topColor: { value: new THREE.Color(0x0f3567) },
+      midColor: { value: new THREE.Color(0x5c89c0) },
+      horizonColor: { value: new THREE.Color(0xffbb9f) },
+      lowerColor: { value: new THREE.Color(0x040a14) },
     },
     vertexShader: `
       varying vec3 vPos;
@@ -93,11 +112,11 @@ export function addSkyDome(scene) {
 
       void main() {
         float h = normalize(vPos).y * 0.5 + 0.5;
-        vec3 dusk = mix(topColor, midColor, smoothstep(0.2, 0.7, h));
-        vec3 warm = mix(horizonColor, dusk, smoothstep(0.04, 0.58, h));
-        vec3 c3 = mix(lowerColor, warm, smoothstep(0.0, 0.88, h));
-        float horizonBand = 1.0 - smoothstep(0.0, 0.22, abs(h - 0.3));
-        c3 += horizonColor * horizonBand * 0.18;
+        vec3 dusk = mix(midColor, topColor, smoothstep(0.24, 0.92, h));
+        vec3 warm = mix(horizonColor, dusk, smoothstep(0.08, 0.64, h));
+        vec3 c3 = mix(lowerColor, warm, smoothstep(0.0, 0.94, h));
+        float horizonBand = 1.0 - smoothstep(0.0, 0.2, abs(h - 0.28));
+        c3 += horizonColor * horizonBand * 0.12;
         gl_FragColor = vec4(c3, 1.0);
       }
     `,
@@ -116,7 +135,7 @@ export function addRunwayLights(scene, starTexture) {
         map: starTexture,
         color,
         transparent: true,
-        opacity: 0.68,
+        opacity: 0.74,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       })
@@ -132,13 +151,13 @@ export function addRunwayLights(scene, starTexture) {
     const depth = i / 33;
     const z = -8 - depth * 190;
     const y = -1.6 + depth * 0.42;
-    const scale = THREE.MathUtils.lerp(1.22, 0.2, depth);
-    addLight(0, y, z, scale, depth, 0xffc476);
+    const scale = THREE.MathUtils.lerp(1.08, 0.2, depth);
+    addLight(0, y, z, scale, depth, 0xfff1d5);
 
-    const spread = 6 + depth * 28;
+    const spread = 6.5 + depth * 30;
     const sideScale = scale * 0.92;
-    addLight(-spread, y - 0.02, z + 0.6, sideScale, depth, 0xff9650);
-    addLight(spread, y - 0.02, z + 0.6, sideScale, depth, 0xff9650);
+    addLight(-spread, y - 0.02, z + 0.6, sideScale, depth, 0xbad7ff);
+    addLight(spread, y - 0.02, z + 0.6, sideScale, depth, 0xbad7ff);
   }
 
   return stars;
@@ -152,17 +171,17 @@ export function addCloudDeck(scene, cloudTexture) {
       new THREE.SpriteMaterial({
         map: cloudTexture,
         transparent: true,
-        opacity: 0.12,
-        color: i % 2 === 0 ? 0x8398ff : 0x5f74ff,
+        opacity: 0.1,
+        color: i % 2 === 0 ? 0xdbe8ff : 0xc4d7ff,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       })
     );
 
     const x = (Math.random() - 0.5) * 120;
-    const y = 16 + Math.random() * 22;
+    const y = 18 + Math.random() * 20;
     const z = -110 - Math.random() * 120;
-    const s = 18 + Math.random() * 34;
+    const s = 24 + Math.random() * 40;
 
     cloud.position.set(x, y, z);
     cloud.scale.set(s, s * 0.5, 1);
@@ -185,9 +204,9 @@ export function addAtmosphereVolumes(scene, volumeFogTexture) {
     const height = THREE.MathUtils.lerp(14, 8, depth);
     const material = new THREE.SpriteMaterial({
       map: volumeFogTexture,
-      color: i % 2 === 0 ? 0xff8d4a : 0x7c8fff,
+      color: i % 2 === 0 ? 0xffd7bf : 0xc6dcff,
       transparent: true,
-      opacity: THREE.MathUtils.lerp(0.055, 0.03, depth),
+      opacity: THREE.MathUtils.lerp(0.062, 0.034, depth),
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       depthTest: false,
